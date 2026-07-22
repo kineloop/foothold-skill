@@ -1,6 +1,6 @@
 # foothold-skill
 
-A Claude Code skill for operating a [Foothold](https://github.com/sharan-industries/foothold)
+A Claude Code skill for operating a [Foothold](https://github.com/kineloop/foothold)
 job-search pipeline through its MCP server: the daily outreach loop, drafting
 and triaging networking emails, logging events, ingesting conversation
 screenshots, and building the LAMP list - all with the operating discipline
