@@ -45,6 +45,9 @@ its state. When unsure how the method wants something handled, read
    `add_conversation` (the reply, INBOUND) -> `append_contact_memory` for
    lines the user agrees with.
 5. `complete_action` / `skip_action` for non-send actions.
+6. `add_custom_action` for user-requested to-dos ("remind me to update my
+   resume") - due today by default, never touches the cadence. Only add what
+   the user actually asked for; the queue stays finite and calm.
 
 ## Building the pipeline
 
