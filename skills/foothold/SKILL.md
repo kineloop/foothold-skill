@@ -24,9 +24,15 @@ its state. When unsure how the method wants something handled, read
 3. **One event per real-world happening.** Never stack events speculatively.
 4. **Destructive actions need explicit confirmation.** `rule_out_employer`
    deletes the employer AND its contacts and history, irreversibly.
-5. **Never invent contact facts.** Drafts must ground in stored memory and
-   conversation. Thin context? Ask the user, or pass what they give you as
-   `extraContext` - never fabricate specifics.
+5. **Never invent contact facts - and never *infer* them from a brand.** Drafts
+   must ground in stored memory and conversation. Do NOT guess a person's skills,
+   focus, or seniority from their employer's name (a VMware alum is not
+   automatically an infra engineer; a Microsoft alum is not automatically .NET) -
+   read their stated role / About / memory, or ask. The same discipline applies
+   when you *write* `memory` or `connection`: putting an inferred "fact" in those
+   fields poisons every future draft (the model grounds in it faithfully). Thin
+   context? Ask the user, or pass what they give you as `extraContext` - never
+   fabricate specifics.
 6. **Motivation is always the user's gut, never yours.** `research_employer`
    and `suggest_employers` inform the 0-3 score; the user sets it. Never
    propose or auto-fill a Motivation number.
@@ -103,7 +109,9 @@ third-attempt responder is an Obligate with negative ROI), never guilt.
 2. Per send-type action: `draft_email` (contactId + a templateKey from
    `list_templates`; include `extraContext` if the user supplies anything). The
    `draft_outreach` MCP prompt scaffolds the same by-the-book. Show the draft;
-   the user edits and sends it themselves.
+   the user edits and sends it themselves. **Before you show any draft, run the
+   pre-send checklist below** - the app's `sixPointCheck` is a backstop, not a
+   substitute for reading your own output.
 3. After the user confirms a send: `log_event` (the matching *_SENT event)
    + `add_conversation` (the sent text, OUTBOUND).
 4. Anything inbound: `triage_reply` -> pass its `proposed.event` to
@@ -114,6 +122,25 @@ third-attempt responder is an Obligate with negative ROI), never guilt.
 6. `add_custom_action` for user-requested to-dos ("remind me to update my
    resume") - due today by default, never touches the cadence. Only add what
    the user actually asked for; the queue stays finite and calm.
+
+## Pre-send draft checklist (first outreach)
+
+Read the finished draft against these before showing it. `draft_email` reports a
+`sixPointCheck` (words, question mark, about-them ratio, no meeting times, no
+visa/relocation language) - trust it, but also eyeball the two it can't judge:
+
+- **Grounded?** Every recipient-specific claim traces to their stored role /
+  About / memory - not inferred from an employer brand. If you can't cite the
+  source, cut it or make it a placeholder the user verifies.
+- **No visa/immigration undertone.** Never mention (or hint at) visa, OPT/CPT, a
+  green card, sponsorship, work authorization, or "moving to the US" / "same
+  path" in a first message - it reframes an advice ask as "I want a sponsor".
+  Save it for a far-later conversation, if ever.
+- **Wrong-person test.** At least one detail only this recipient could own; the
+  connection line is a short phrase (completes "a fellow ___"), not a paragraph.
+- **Their language, not a fabricated overlap.** If your stack and theirs don't
+  overlap, they're a relationship/path/culture contact - keep the interest broad
+  and about them, don't invent a shared technical niche.
 
 ## Building the LAMP list and contacts
 
