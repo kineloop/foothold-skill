@@ -177,6 +177,11 @@ visa/relocation language) - trust it, but also eyeball the two it can't judge:
 - **Messages vs notes:** real exchanged message text -> `add_conversation`;
   the user's own observations -> `append_contact_note` (timeline) or
   `append_contact_memory` (durable facts about the person).
+- **Historical Activity:** use `record_historical_event` only for a verified
+  past event that should appear at its real date without advancing current
+  state or creating stale reminders. Use `correct_event_date` to repair only
+  the date of an existing Activity row. Cadence events otherwise remain
+  immutable: never treat either tool as event deletion, reversal, or replay.
 - `render_template` fills a template without the LLM; `update_template` edits
   one (keep `{{placeholder}}` tokens intact; 6-point templates must still
   pass their checks).
