@@ -116,10 +116,16 @@ third-attempt responder is an Obligate with negative ROI), never guilt.
    see Stage 0/1 above if the pipeline isn't built yet).
 2. Per send-type action: `draft_email` (contactId + a templateKey from
    `list_templates`; include `extraContext` if the user supplies anything). The
-   `draft_outreach` MCP prompt scaffolds the same by-the-book. Show the draft;
-   the user edits and sends it themselves. **Before you show any draft, run the
-   pre-send checklist below** - the app's `sixPointCheck` is a backstop, not a
-   substitute for reading your own output.
+   `draft_outreach` MCP prompt scaffolds the same by-the-book. **For any contact
+   who already has history (anything past the first 6-Point - follow-ups,
+   check-ins, re-warms), first pull `get_conversation` + `get_contact` memory and
+   ground the draft in the real thread:** mirror the register that actually earned
+   a reply, reuse the contact's own tone and wording, and avoid whatever preceded
+   silence. Never hand-compose a message that ignores the existing thread - a
+   generic note reads like the outreach that got ignored. Show the draft; the user
+   edits and sends it themselves. **Before you show any draft, run the pre-send
+   checklist below** - the app's `sixPointCheck` is a backstop, not a substitute
+   for reading your own output.
 3. After the user confirms a send: `log_event` (the matching *_SENT event)
    + `add_conversation` (the sent text, OUTBOUND).
 4. Anything inbound: `triage_reply` -> pass its `proposed.event` to
@@ -149,6 +155,9 @@ visa/relocation language) - trust it, but also eyeball the two it can't judge:
 - **Their language, not a fabricated overlap.** If your stack and theirs don't
   overlap, they're a relationship/path/culture contact - keep the interest broad
   and about them, don't invent a shared technical niche.
+- **No em-dashes.** Never put an em-dash (or en-dash) in a drafted message, email,
+  or subject line - use a period, comma, or a spaced hyphen instead. Em-dashes read
+  as machine-written and break the human register you're matching.
 
 ## Building the LAMP list and contacts
 
