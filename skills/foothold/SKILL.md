@@ -110,6 +110,56 @@ Segments (`BOOSTER` / `SUPER_BOOSTER` / `OBLIGATE` / `CURMUDGEON`) come back on
 `get_contact` and `log_event` - narrate them (a fast reply is a likely Booster; a
 third-attempt responder is an Obligate with negative ROI), never guilt.
 
+## Contact state machine (the per-contact stages the engine drives)
+
+The Stage 0-5 frame above is where the *user* is in building the pipeline; each
+*contact* also walks a fixed 12-state `status` ladder the engine advances on
+`log_event`. Read the live `status` from `get_contact` - never set it yourself -
+then narrate the current state and the one legal next touch the engine queued.
+
+| `status` | Reached by (event) | What the engine queues next |
+|---|---|---|
+| `IDENTIFIED` | contact created | 6-Point Email today (`SEND_6PT`) |
+| `EMAILED` | `SIX_PT_SENT` | 3B try-second-contact + 7B one follow-up |
+| `FOLLOWED_UP` | `FOLLOW_UP_SENT` | +3B abandon check (one follow-up, ever) |
+| `RESPONDED` | `REPLY_RECEIVED` (no callback) | reply + lock meeting within 24h |
+| `MEETING_SCHEDULED` | `MEETING_SCHEDULED` | calendar invite, prep, (referrer ack) |
+| `MEETING_DONE` | `MEETING_HELD` | thank-you +1B, referral ask +5B, (advice update) |
+| `CLOSING` | `REFERRAL_ASK_SENT` | nothing; awaiting the referral |
+| `NURTURE` | `REFERRAL_RECEIVED` / progress sent / check-in reply | monthly check-in |
+| `ADVANCED` | `ADVANCE` (resume requested / connected onward) | send requested materials today |
+| `HOLD` | reply-with-callback, or the ask answered but no referral | callback / monthly check-in |
+| `DROPPED` | two silent check-ins, or `DROP` | restart 3B7 with a new contact |
+| `ABANDONED` | `ABANDON` (silent after the one follow-up) | none; Curmudgeon, cheaply filtered |
+
+`ADVANCED` / `HOLD` / `NURTURE` keep the relationship warm; `DROPPED` /
+`ABANDONED` close it without guilt. A contact reaching any of these terminal
+outcomes with no outreach reminder skipped is one **flawless 3B7 round** - three
+of those unlock widening past the Top 5 (`countFlawlessRounds`).
+
+## Warm introductions (double opt-in - a parallel entry path)
+
+A referred person does NOT start at a cold 6-Point. Use `create_referred_contact`
+(links them to the referrer), then run the double opt-in - the book never chases
+a reputation-bearing favor with an invented cadence:
+
+1. `log_event INTRO_REQUEST_SENT` (`REQUEST_INTRO`): ask the connector for the
+   intro (show homework, easy out). Nothing else is scheduled; you wait.
+2. Intro arrives -> `log_event INTRO_RECEIVED`: queues `RESPOND_TO_INTRO` today.
+3. Reply-all, move the connector to BCC, make the small advice ask directly ->
+   `log_event INTRO_REPLY_SENT`. **That direct reply is the first real touch, so
+   3B7 begins here** - same clock as a 6-Point, not before.
+4. When the meeting books, the engine also queues `ACKNOWLEDGE_REFERRER` - close
+   the connector's loop without sharing private conversation details.
+
+## Advice result update (Stage 4 add-on)
+
+When meeting notes record concrete advice + the user's commitment + a future
+result date, run `analyze_advice_commitment`; if it returns a follow-up the user
+approves, pass it to `log_event MEETING_HELD` (`adviceFollowUp`) and the engine
+schedules one `ADVICE_UPDATE` ("close the loop: 'thanks to you, I...'"). Vague or
+dateless advice stays unscheduled - never invent the date.
+
 ## The daily loop
 
 1. `get_today` - the finite queue (never invent extra work; empty = done, or
@@ -127,12 +177,20 @@ third-attempt responder is an Obligate with negative ROI), never guilt.
    checklist below** - the app's `sixPointCheck` is a backstop, not a substitute
    for reading your own output.
 3. After the user confirms a send: `log_event` (the matching *_SENT event)
-   + `add_conversation` (the sent text, OUTBOUND).
+   + `add_conversation` (the sent text, OUTBOUND). This holds for *every* real
+   touch, including ones the engine surfaced as a CUSTOM/TODO row (re-warms,
+   nudges) - a re-warm or check-in touch logs `CHECKIN_SENT`. `log_event` is the
+   only thing that writes the Activity row, updates last-touched, and advances
+   cadence; `add_conversation` (corpus) and `complete_action` (queue) do neither.
 4. Anything inbound: `triage_reply` -> pass its `proposed.event` to
    `log_event` VERBATIM (the mapping is deterministic; don't second-guess) ->
    `add_conversation` (the reply, INBOUND) -> `append_contact_memory` for
    lines the user agrees with.
-5. `complete_action` / `skip_action` for non-send actions.
+5. `complete_action` / `skip_action` - queue bookkeeping only; records no
+   Activity event and moves no cadence. "Non-send" means no message actually
+   went out (e.g. "update my resume", "review this posting"). If the action
+   *did* produce a real touch - even a CUSTOM re-warm/check-in row - run step 3
+   (`log_event` + `add_conversation`) FIRST, then `complete_action` to clear it.
 6. `add_custom_action` for user-requested to-dos ("remind me to update my
    resume") - due today by default, never touches the cadence. Only add what
    the user actually asked for; the queue stays finite and calm.
