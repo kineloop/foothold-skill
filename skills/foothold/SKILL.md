@@ -49,6 +49,18 @@ its state. When unsure how the method wants something handled, read
    or a "same-company spam" reason are NOT in the book) must be flagged
    explicitly as your own reasoning, never dressed up as "the book says". This is
    Rule 5's grounding discipline applied to advice, not just drafts.
+10. **The engine rejects illegal events - respect the rejection.** `log_event`
+   and `log_opportunity_event` validate every event against the contact's
+   current `status` (or the opportunity's stage) and throw an error naming the
+   legal alternatives (e.g. a second `FOLLOW_UP_SENT`, any event on a
+   `DROPPED`/`ABANDONED` contact, `OFFER_ACCEPTED` on a withdrawn
+   opportunity). On rejection: re-read state (`get_contact` / `get_employer`),
+   then either log the event from the legal set that describes what actually
+   happened, or tell the user why nothing can be logged. Never "fix" a
+   rejection by logging a different event that didn't happen, and never retry
+   the same call. `complete_action` / `skip_action` likewise reject actions
+   that are no longer pending - that means the queue moved; re-read
+   `get_today`.
 
 ## Meet the user where they are
 
@@ -77,11 +89,13 @@ that is correct, not a failure.
 rows (unfamiliar) or no contacts. For any M=0 employer, `research_employer`
 builds a dossier so the *user* can score Motivation. `refresh_postings` proposes
 P-score updates to apply via `update_employer`. Then add contacts on the Top 5:
-`create_contact` auto-queues the 6-Point Email for today. **Hard gate: never run
-more than 5 active employers until three flawless 3B7 rounds** - the book's rule.
-Widen only when a Booster frees a slot, an employer is ruled out, or the user has
-cleanly worked a third contact at each Top-5 employer. Aim for two starter
-contacts per Top-5 employer.
+`create_contact` auto-queues the 6-Point Email for today. **The Top-5 pipeline
+refills on any of the book's three triggers** (2HJS Quick-Start step 8): a true
+Booster identified at a Top-5 employer frees that slot; an employer ruled out is
+replaced immediately ("no thinking, just execution"); and once three flawless
+3B7 rounds are complete, time permitting, a *sixth or seventh* simultaneous
+employer may be added - never an open throttle. Outside those triggers, stay at
+5. Aim for two starter contacts per Top-5 employer.
 
 **Stage 2 - Contacts exist, outreach due.** The daily loop (below) is the steady
 state: the engine queues 6-Points, follow-ups, and check-ins; you draft and log.
@@ -89,9 +103,11 @@ state: the engine queues 6-Points, follow-ups, and check-ins; you draft and log.
 **Stage 3 - Sent, awaiting / replies.** 3B7 runs server-side: at 3 business days
 with no reply the engine queues a *second* contact at that employer (add via
 `create_contact`) - NOT a follow-up to the first; at 7 it queues the one allowed
-follow-up. Out-of-office -> `log_event OOO_RECEIVED` (businessDays) and the engine
-shifts the reminders. Inbound -> `triage_reply` -> `log_event(proposed.event)` ->
-`add_conversation` (INBOUND) -> `append_contact_memory`.
+follow-up. Out-of-office -> `log_event OOO_RECEIVED` (businessDays, max 30;
+legal only while `EMAILED` or `FOLLOWED_UP` - an autoresponder outside the
+outreach window is not engagement and logs nothing). Inbound -> `triage_reply`
+-> `log_event(proposed.event)` -> `add_conversation` (INBOUND) ->
+`append_contact_memory`.
 
 **Stage 4 - Meeting booked (Convince).** `log_event MEETING_SCHEDULED` ->
 `prep_meeting` (research dossier + TIARA questions + the Two-Part Closing part-1
@@ -103,12 +119,17 @@ Two-Part Closing: the referral ask goes out the *next* business week
 (`REFERRAL_RECEIVED`) -> add the referred person (`create_contact`, a fresh 3B7)
 and a progress update to the referrer ~2 weeks out (`PROGRESS_UPDATE_SENT`).
 Monthly check-ins (`CHECKIN_SENT` / `CHECKIN_REPLY`, `NEWS_SHARED`) keep contacts
-warm; per-contact outcomes are `ADVANCE` / `HOLD` / `DROP`; two silent check-ins
--> `DROP` and start a fresh contact. Loop until an offer.
+warm; per-contact outcomes are `ADVANCE` / `HOLD` / `DROP`. Two *confirmed*
+unanswered check-ins close the contact: after the second silent one the engine
+queues a drop-advice action, and it drops the contact rather than sending a
+third. Loop until an offer.
 
-Segments (`BOOSTER` / `SUPER_BOOSTER` / `OBLIGATE` / `CURMUDGEON`) come back on
-`get_contact` and `log_event` - narrate them (a fast reply is a likely Booster; a
-third-attempt responder is an Obligate with negative ROI), never guilt.
+Segments come back on `get_contact` and `log_event`. The engine only ever
+*assigns* `BOOSTER` (reply within 3B of the FIRST outreach - a reply to the 7B
+follow-up does not qualify) and `CURMUDGEON` (on abandon); `SUPER_BOOSTER` and
+`OBLIGATE` are coaching vocabulary you may narrate (a helper at a non-hiring
+firm; a slow, vague responder with negative ROI), never states you'll read
+back. Narrate without guilt.
 
 ## Contact state machine (the per-contact stages the engine drives)
 
@@ -125,11 +146,11 @@ then narrate the current state and the one legal next touch the engine queued.
 | `RESPONDED` | `REPLY_RECEIVED` (no callback) | reply + lock meeting within 24h |
 | `MEETING_SCHEDULED` | `MEETING_SCHEDULED` | calendar invite, prep, (referrer ack) |
 | `MEETING_DONE` | `MEETING_HELD` | thank-you +1B, referral ask +5B, (advice update) |
-| `CLOSING` | `REFERRAL_ASK_SENT` | nothing; awaiting the referral |
+| `CLOSING` | `REFERRAL_ASK_SENT` | monthly check-in (+1 month); silence is not a no |
 | `NURTURE` | `REFERRAL_RECEIVED` / progress sent / check-in reply | monthly check-in |
 | `ADVANCED` | `ADVANCE` (resume requested / connected onward) | send requested materials today |
 | `HOLD` | reply-with-callback, or the ask answered but no referral | callback / monthly check-in |
-| `DROPPED` | two silent check-ins, or `DROP` | restart 3B7 with a new contact |
+| `DROPPED` | two confirmed-unanswered check-ins, or `DROP` | restart 3B7 with a new contact |
 | `ABANDONED` | `ABANDON` (silent after the one follow-up) | none; Curmudgeon, cheaply filtered |
 
 `ADVANCED` / `HOLD` / `NURTURE` keep the relationship warm; `DROPPED` /
@@ -185,7 +206,12 @@ dateless advice stays unscheduled - never invent the date.
 4. Anything inbound: `triage_reply` -> pass its `proposed.event` to
    `log_event` VERBATIM (the mapping is deterministic; don't second-guess) ->
    `add_conversation` (the reply, INBOUND) -> `append_contact_memory` for
-   lines the user agrees with.
+   lines the user agrees with. **`proposed.event` can be `null`** (no legal
+   cadence event fits the contact's stage - e.g. an autoresponder after the
+   meeting booked, or a mid-meeting-flow reply): skip `log_event` entirely,
+   still `add_conversation` and save memory. A `DECLINE` that names a future
+   date ("try me in September") comes back as a reply WITH a callback - log it;
+   the engine holds the contact and schedules the callback.
 5. `complete_action` / `skip_action` - queue bookkeeping only; records no
    Activity event and moves no cadence. "Non-send" means no message actually
    went out (e.g. "update my resume", "review this posting"). If the action
