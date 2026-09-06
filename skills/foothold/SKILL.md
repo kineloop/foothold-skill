@@ -6,14 +6,40 @@ description: Operate a Foothold job-search pipeline through its MCP server (serv
 # Operating Foothold over MCP
 
 Foothold enforces Steve Dalton's *The 2-Hour Job Search* + Gorick Ng's *The
-Unspoken Rules* for one job seeker (the user - each Foothold deployment is
-single-user). The cadence engine (business-day math, the 3B7 state machine)
-is deterministic and server-side: never schedule, compute dates, or advance
-stages yourself. You log what actually happened; the engine plans the rest.
+Unspoken Rules* for one job seeker per account. The hosted product is multi-user;
+the connected MCP credential resolves one account, and every tool operates only
+on that account's pipeline. The cadence engine (business-day math, the 3B7 state
+machine) is deterministic and server-side: never schedule, compute dates, or
+advance stages yourself. You log what actually happened; the engine plans the
+rest.
 
 If the Foothold MCP server is not connected, say so and stop - never simulate
 its state. When unsure how the method wants something handled, read
 `get_methodology` first.
+
+## Route the request before acting
+
+Keep this file loaded for every Foothold task. Read the focused reference when
+the request enters one of these less-common workflows:
+
+- Interview, written offer, negotiation, acceptance, decline, or ending the
+  search: read [references/opportunities.md](references/opportunities.md).
+- Importing, correcting, moving, deleting, or restoring notes, Activity, or
+  conversation messages: read
+  [references/records-and-corrections.md](references/records-and-corrections.md).
+- Employer/contact discovery, public-profile privacy, settings, profile, AI
+  configuration, templates, or custom queue work: read
+  [references/pipeline-operations.md](references/pipeline-operations.md).
+- To identify the right tool or audit capability coverage, read
+  [references/tool-catalog.md](references/tool-catalog.md).
+- Whenever the user says something happened (sent, received, met, completed,
+  skipped, corrected, or deleted), read
+  [references/side-effects.md](references/side-effects.md) before writing. It is
+  the required-record matrix that prevents Messages, Activity, last-touched,
+  cadence, and Today from drifting apart.
+
+The live tool description and schema are authoritative for call arguments. A
+reference explains intent and sequencing; it never overrides a tool rejection.
 
 ## Hard rules (violating these corrupts the pipeline)
 
@@ -21,7 +47,11 @@ its state. When unsure how the method wants something handled, read
    machine and sets reminders. Never log SIX_PT_SENT / FOLLOW_UP_SENT etc.
    because a draft exists - only after the user confirms it was actually sent.
 2. **Never send anything yourself.** Drafts are copy material; the user sends.
-3. **One event per real-world happening.** Never stack events speculatively.
+3. **Record every semantic outcome exactly once.** Never stack events
+   speculatively. One message can contain more than one verified outcome (for
+   example, a first reply that also confirms a meeting); when the state machine
+   requires separate legal transitions, log each verified outcome once in legal
+   order and store the message text once.
 4. **Destructive actions need explicit confirmation.** `rule_out_employer`
    deletes the employer AND its contacts and history, irreversibly.
 5. **Never invent contact facts - and never *infer* them from a brand.** Drafts
@@ -61,6 +91,22 @@ its state. When unsure how the method wants something handled, read
    the same call. `complete_action` / `skip_action` likewise reject actions
    that are no longer pending - that means the queue moved; re-read
    `get_today`.
+11. **Separate proposals, records, and queue bookkeeping.** Draft/research tools
+    propose; they do not prove a send or change cadence. `log_event` and
+    `log_opportunity_event` record real happenings and advance their engines.
+    `complete_action` / `skip_action` only clear queue rows. Never substitute one
+    layer for another or call all three mechanically.
+12. **Confirm irreversible or search-ending changes at the moment of action.**
+    Confirm `rule_out_employer`, `end_search`, `OFFER_ACCEPTED`, and any delete
+    tool immediately before the call. Note and conversation deletes are
+    restorable; employer deletion is not, and MCP search-end undo exists only in
+    the web app. A prior statement of intent is not confirmation if the target or
+    consequence has since changed.
+13. **Finish the whole write-set.** A successful tool call is not proof the
+    real-world action is fully recorded. Use the matrix in
+    [references/side-effects.md](references/side-effects.md), then re-read the
+    contact/opportunity and Today queue. If step two fails after step one
+    succeeds, resume only the missing step; never replay the successful event.
 
 ## Meet the user where they are
 
@@ -88,8 +134,11 @@ that is correct, not a failure.
 **Stage 1 - LAMP exists but isn't actionable.** Employers, but `motivation: 0`
 rows (unfamiliar) or no contacts. For any M=0 employer, `research_employer`
 builds a dossier so the *user* can score Motivation. `refresh_postings` proposes
-P-score updates to apply via `update_employer`. Then add contacts on the Top 5:
-`create_contact` auto-queues the 6-Point Email for today. **The Top-5 pipeline
+P-score updates to apply via `update_employer`. Then use `suggest_contacts` for
+one Top-5 employer and obey its `needsContact` and `gateReason`; sourced
+candidates are proposals, not contacts. Add only a user-selected, verified
+person with `create_contact`, which auto-queues the 6-Point Email for today.
+Never bulk-add a shortlist. **The Top-5 pipeline
 refills on any of the book's three triggers** (2HJS Quick-Start step 8): a true
 Booster identified at a Top-5 employer frees that slot; an employer ruled out is
 replaced immediately ("no thinking, just execution"); and once three flawless
@@ -181,6 +230,12 @@ approves, pass it to `log_event MEETING_HELD` (`adviceFollowUp`) and the engine
 schedules one `ADVICE_UPDATE` ("close the loop: 'thanks to you, I...'"). Vague or
 dateless advice stays unscheduled - never invent the date.
 
+If the result reminder comes due before the result exists, do not mark it done
+or manufacture progress. Use `draft_commitment_recovery` with the user's exact
+current status, revised commitment, and future date. Only after they confirm the
+exact recovery message was sent, call `record_commitment_recovery`; it records
+the message and moves the same reminder while keeping it pending.
+
 ## The daily loop
 
 1. `get_today` - the finite queue (never invent extra work; empty = done, or
@@ -197,19 +252,25 @@ dateless advice stays unscheduled - never invent the date.
    edits and sends it themselves. **Before you show any draft, run the pre-send
    checklist below** - the app's `sixPointCheck` is a backstop, not a substitute
    for reading your own output.
-3. After the user confirms a send: `log_event` (the matching *_SENT event)
-   + `add_conversation` (the sent text, OUTBOUND). This holds for *every* real
-   touch, including ones the engine surfaced as a CUSTOM/TODO row (re-warms,
-   nudges) - a re-warm or check-in touch logs `CHECKIN_SENT`. `log_event` is the
-   only thing that writes the Activity row, updates last-touched, and advances
-   cadence; `add_conversation` (corpus) and `complete_action` (queue) do neither.
+3. After the user confirms a send, use the exact row in
+   [references/side-effects.md](references/side-effects.md). Most sent-event
+   schemas cannot carry body text, so call `log_event` first and then
+   `add_conversation` with the exact sent text as OUTBOUND. `log_event` writes
+   Activity (which the UI uses to derive last-touched) and advances cadence;
+   `add_conversation` writes the drafting corpus; `complete_action` only changes
+   the queue. A generic touch is not automatically a `CHECKIN_SENT`: if that
+   event is illegal or does not describe what happened, record the exact message
+   plus a factual Activity note instead of lying to the cadence engine.
 4. Anything inbound: `triage_reply` -> pass its `proposed.event` to
    `log_event` VERBATIM (the mapping is deterministic; don't second-guess) ->
-   `add_conversation` (the reply, INBOUND) -> `append_contact_memory` for
-   lines the user agrees with. **`proposed.event` can be `null`** (no legal
-   cadence event fits the contact's stage - e.g. an autoresponder after the
-   meeting booked, or a mid-meeting-flow reply): skip `log_event` entirely,
-   still `add_conversation` and save memory. A `DECLINE` that names a future
+   `append_contact_memory` only for lines the user approves. For
+   `REPLY_RECEIVED` and `CHECKIN_REPLY`, include the exact reply as event
+   `content`; `log_event` then writes Activity and the INBOUND corpus atomically,
+   so do not add the same message again. **`proposed.event` can be `null`** (no
+   legal cadence event fits the contact's stage - e.g. an autoresponder after a
+   meeting booked, or a mid-meeting-flow reply): skip `log_event`, use
+   `add_conversation`, and add a short factual Activity note only if this is a
+   new real touch that should move last-touched. A `DECLINE` that names a future
    date ("try me in September") comes back as a reply WITH a callback - log it;
    the engine holds the contact and schedules the callback.
 5. `complete_action` / `skip_action` - queue bookkeeping only; records no
@@ -278,6 +339,12 @@ overdue), `update_profile` / `import_profile_from_url` (the About-you facts
 drafts ground in), `update_llm_settings` (provider/model pick; null/null =
 app default). API keys live in the web Settings only - never ask for them,
 never accept them over chat.
+
+`run_search_safety_review` is an optional privacy/public-profile review, not a
+background investigation. Use only the user's own situation description and the
+exact public URLs they supply. Never discover additional profiles or change an
+external account. Read [references/pipeline-operations.md](references/pipeline-operations.md)
+before running it.
 
 ## Reporting frame
 

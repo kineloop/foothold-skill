@@ -1,6 +1,7 @@
 # foothold-skill
 
-A Claude Code skill for operating a [Foothold](https://github.com/kineloop/foothold)
+A Codex, Claude Code, and MCP-capable agent skill for operating a
+[Foothold](https://github.com/kineloop/foothold)
 job-search pipeline through its MCP server: the daily outreach loop, drafting
 and triaging networking emails, logging events, ingesting conversation
 screenshots, and building the LAMP list - all with the operating discipline
@@ -9,18 +10,26 @@ verbatim ingestion, destructive-action confirmation).
 
 ## Install
 
-Copy the skill into your Claude Code skills directory:
+Copy the complete skill directory into your agent's skills directory (the
+references are part of the skill). For Claude Code:
 
 ```
 mkdir -p ~/.claude/skills/foothold
-cp skills/foothold/SKILL.md ~/.claude/skills/foothold/SKILL.md
+cp -R skills/foothold/. ~/.claude/skills/foothold/
+```
+
+For Codex:
+
+```
+mkdir -p ~/.codex/skills/foothold
+cp -R skills/foothold/. ~/.codex/skills/foothold/
 ```
 
 Then connect your Foothold deployment's MCP server:
 
 ```
 claude mcp add --transport http Foothold https://<your-foothold-domain>/api/mcp \
-  --header "Authorization: Bearer <your MCP_API_KEY>"
+  --header "Authorization: Bearer <your-fh-token>"
 ```
 
 The skill triggers automatically on job-search work ("who's due today",
@@ -28,6 +37,16 @@ The skill triggers automatically on job-search work ("who's due today",
 
 ## Requirements
 
-- A running Foothold instance (each deployment is single-user) with its
-  `MCP_API_KEY` set.
-- Claude Code (or any agent host that reads `SKILL.md` skills and speaks MCP).
+- A running multi-user Foothold instance and a personal `fh_...` token minted
+  from Settings → Agents. The legacy deployment-wide `MCP_API_KEY` is only a
+  transitional fallback and should not be used for a new connection.
+- Codex, Claude Code, or another agent host that reads `SKILL.md` and speaks MCP.
+
+## Maintainer validation
+
+After Foothold's MCP catalog or this skill changes, run both checks:
+
+```
+uv run --with pyyaml python ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/foothold
+node skills/foothold/scripts/validate-tool-coverage.mjs ../kineloop-personal/apps/foothold/lib/mcp/tools.ts
+```
